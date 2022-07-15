@@ -1,0 +1,507 @@
+From c5d20dc2edf196b4ea7722bb103752f6dfa74019 Mon Sep 17 00:00:00 2001
+From: mdxd44 <mdxd44@ely.su>
+Date: Mon, 21 Jun 2021 07:56:29 +0900
+Subject: [PATCH] Api features
+
+
+diff --git a/api/build.gradle b/api/build.gradle
+index c4f10d2c..368004ab 100644
+--- a/api/build.gradle
++++ b/api/build.gradle
+@@ -37,6 +37,7 @@ dependencies {
+     api("net.kyori:adventure-text-serializer-legacy")
+     api("net.kyori:adventure-text-serializer-plain")
+ 
++    // ElytraProxy: Revert deprecated kyori dependencies for backward compatibility
+     api "net.kyori:text-api:${textVersion}"
+     api "net.kyori:text-serializer-gson:${textVersion}"
+     api "net.kyori:text-serializer-legacy:${textVersion}"
+diff --git a/api/src/main/java/com/velocitypowered/api/proxy/ProxyServer.java b/api/src/main/java/com/velocitypowered/api/proxy/ProxyServer.java
+index 1fd5d7cf..e2ad3f1d 100644
+--- a/api/src/main/java/com/velocitypowered/api/proxy/ProxyServer.java
++++ b/api/src/main/java/com/velocitypowered/api/proxy/ProxyServer.java
+@@ -153,6 +153,22 @@ public interface ProxyServer extends Audience {
+    */
+   EventManager getEventManager();
+ 
++  // ElytraProxy Start
++  /**
++   * Gets the blocked bots.
++   *
++   * @return blocked bots by elytraproxy antibot system.
++   */
++  long getBlockedBots();
++
++  /**
++   * Gets the total connections per second.
++   *
++   * @return total connections per second from elytraproxy stats.
++   */
++  long getTotalConnectionsPerSecond();
++  // ElytraProxy End
++
+   /**
+    * Gets the {@link CommandManager} instance.
+    *
+diff --git a/proxy/build.gradle b/proxy/build.gradle
+index fd818b94..578a56e5 100644
+--- a/proxy/build.gradle
++++ b/proxy/build.gradle
+@@ -26,7 +26,6 @@ license {
+         header = project.rootProject.file('HEADER.txt')
+     }
+     header = project.rootProject.file('HEADER.txt')
+-    exclude '**/default-elytraproxy.yml'
+ }
+ 
+ jar {
+@@ -58,7 +57,7 @@ tasks.withType(Checkstyle) {
+ }
+ 
+ dependencies {
+-    //BotFilter add lombok
++    // BotFilter backport: Add lombok
+     compileOnly 'org.projectlombok:lombok:1.18.20'
+     annotationProcessor 'org.projectlombok:lombok:1.18.20'
+ 
+@@ -70,6 +69,7 @@ dependencies {
+     implementation project(':elytraproxy-api').sourceSets.ap.output
+     implementation project(':elytraproxy-native')
+ 
++    // ElytraProxy
+     implementation "org.mariadb.jdbc:mariadb-java-client:2.7.3"
+ 
+     implementation "io.netty:netty-codec:${nettyVersion}"
+diff --git a/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java b/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java
+index b6c1cb07..318363a0 100644
+--- a/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java
++++ b/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java
+@@ -101,6 +101,8 @@ import net.kyori.adventure.text.Component;
+ import net.kyori.adventure.translation.GlobalTranslator;
+ import net.kyori.adventure.translation.TranslationRegistry;
+ import net.kyori.adventure.util.UTF8ResourceBundleControl;
++import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
++import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+ import org.apache.logging.log4j.LogManager;
+ import org.apache.logging.log4j.Logger;
+ import org.asynchttpclient.AsyncHttpClient;
+@@ -152,6 +154,7 @@ public class VelocityServer implements ProxyServer, ForwardingAudience {
+   // ElytraProxy
+   @Getter
+   private ElytraProxy elytraProxy;
++  private Component maintenanceMotd;
+ 
+   VelocityServer(final ProxyOptions options) {
+     pluginManager = new VelocityPluginManager(this);
+@@ -549,7 +552,13 @@ public class VelocityServer implements ProxyServer, ForwardingAudience {
+    * @param explicitExit whether the user explicitly shut down the proxy
+    */
+   public void shutdown(boolean explicitExit) {
+-    shutdown(explicitExit, Component.text("Proxy shutting down."));
++    shutdown(explicitExit,
++        LegacyComponentSerializer
++            .legacyAmpersand()
++            .deserialize(Settings.IMP.MESSAGES.ELYTRAPROXY.KICK.PROXY_SHUTTING_DOWN
++                .replace("{NL}", "\n")
++                .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
++            ));
+   }
+ 
+   @Override
+@@ -662,9 +671,11 @@ public class VelocityServer implements ProxyServer, ForwardingAudience {
+   @Override
+   public int getPlayerCount() {
+     // ElytraProxy: Exclude online at servers in list
+-    return (int) getAllPlayers().stream().filter(p ->
+-        !Settings.IMP.MAIN_SETTINGS.IGNORE_ONLINE_AT.contains(p.getCurrentServer()
+-        .get().getServerInfo().getName())).count();
++    return (int) getAllPlayers().stream().filter(p -> p.getCurrentServer()
++        .isPresent())
++        .filter(p -> !Settings.IMP.MAIN_SETTINGS.IGNORE_ONLINE_AT
++            .contains(p.getCurrentServer().get().getServerInfo().getName()))
++        .count();
+   }
+ 
+   @Override
+@@ -707,6 +718,18 @@ public class VelocityServer implements ProxyServer, ForwardingAudience {
+     return eventManager;
+   }
+ 
++  // ElytraProxy Start
++  @Override
++  public long getBlockedBots() {
++    return getElytraProxy().getStatistics().getBlockedBots();
++  }
++
++  @Override
++  public long getTotalConnectionsPerSecond() {
++    return getElytraProxy().getStatistics().getTotalConnectionsPerSecond();
++  }
++  // ElytraProxy End
++
+   @Override
+   public VelocityScheduler getScheduler() {
+     return scheduler;
+@@ -747,4 +770,26 @@ public class VelocityServer implements ProxyServer, ForwardingAudience {
+   public ResourcePackInfo.Builder createResourcePackBuilder(String url) {
+     return new VelocityResourcePackInfo.BuilderImpl(url);
+   }
++
++  // ElytraProxy
++  public Component getMaintenanceMotd() {
++    if (Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED) {
++      if (Settings.IMP.MAIN_SETTINGS.MAINTENANCE.MOTD.startsWith("{")) {
++        maintenanceMotd = GsonComponentSerializer
++            .gson()
++            .deserialize(Settings.IMP.MAIN_SETTINGS.MAINTENANCE.MOTD
++                .replace("{NL}", "\n")
++                .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
++            );
++      } else {
++        maintenanceMotd = LegacyComponentSerializer
++            .legacyAmpersand()
++            .deserialize(Settings.IMP.MAIN_SETTINGS.MAINTENANCE.MOTD
++                .replace("{NL}", "\n")
++                .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
++            );
++      }
++    }
++    return maintenanceMotd;
++  }
+ }
+diff --git a/proxy/src/main/java/com/velocitypowered/proxy/command/builtin/ShutdownCommand.java b/proxy/src/main/java/com/velocitypowered/proxy/command/builtin/ShutdownCommand.java
+index 2d855e7a..995b6bfc 100644
+--- a/proxy/src/main/java/com/velocitypowered/proxy/command/builtin/ShutdownCommand.java
++++ b/proxy/src/main/java/com/velocitypowered/proxy/command/builtin/ShutdownCommand.java
+@@ -19,6 +19,7 @@ package com.velocitypowered.proxy.command.builtin;
+ 
+ import com.velocitypowered.api.command.RawCommand;
+ import com.velocitypowered.proxy.VelocityServer;
++import net.elytrium.elytraproxy.config.Settings;
+ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+ 
+ public class ShutdownCommand implements RawCommand {
+@@ -35,7 +36,12 @@ public class ShutdownCommand implements RawCommand {
+     if (reason.isEmpty() || reason.trim().isEmpty()) {
+       server.shutdown(true);
+     } else {
+-      server.shutdown(true, LegacyComponentSerializer.legacy('&').deserialize(reason));
++      server.shutdown(true, LegacyComponentSerializer
++          .legacyAmpersand()
++          .deserialize(reason
++              .replace("{NL}", "\n")
++              .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
++          ));
+     }
+   }
+ 
+diff --git a/proxy/src/main/java/com/velocitypowered/proxy/connection/client/ClientPlaySessionHandler.java b/proxy/src/main/java/com/velocitypowered/proxy/connection/client/ClientPlaySessionHandler.java
+index 01f7ecc1..6104354f 100644
+--- a/proxy/src/main/java/com/velocitypowered/proxy/connection/client/ClientPlaySessionHandler.java
++++ b/proxy/src/main/java/com/velocitypowered/proxy/connection/client/ClientPlaySessionHandler.java
+@@ -134,6 +134,7 @@ public class ClientPlaySessionHandler implements MinecraftSessionHandler {
+                     .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
+                 ));
+         server.getElytraProxy().getStatistics().addBlockedConnection();
++        server.getElytraProxy().getStatistics().addBlockedBots();
+       }
+       if ((!checkedByBrand) && Settings.IMP.ANTIBOT.CHECK_CLIENT_BRAND) {
+         player.disconnect(
+@@ -144,6 +145,7 @@ public class ClientPlaySessionHandler implements MinecraftSessionHandler {
+                     .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
+                 ));
+         server.getElytraProxy().getStatistics().addBlockedConnection();
++        server.getElytraProxy().getStatistics().addBlockedBots();
+       }
+     }
+   }
+@@ -190,6 +192,7 @@ public class ClientPlaySessionHandler implements MinecraftSessionHandler {
+                   ));
+           server.getElytraProxy().getLogger().error("{} has null in settings packet", player);
+           server.getElytraProxy().getStatistics().addBlockedConnection();
++          server.getElytraProxy().getStatistics().addBlockedBots();
+         } else if (!packet.isChatColors()) {
+           logger.error(toStringPacket, player);
+           player.disconnect(
+@@ -203,6 +206,7 @@ public class ClientPlaySessionHandler implements MinecraftSessionHandler {
+           server.getElytraProxy().getLogger().error("{} doesn't send isChatColors packet",
+               player);
+           server.getElytraProxy().getStatistics().addBlockedConnection();
++          server.getElytraProxy().getStatistics().addBlockedBots();
+         } else if (packet.getSkinParts() == 0) {
+           logger.error(toStringPacket, player);
+           player.disconnect(
+@@ -216,6 +220,7 @@ public class ClientPlaySessionHandler implements MinecraftSessionHandler {
+           server.getElytraProxy().getLogger().error("{} doesn't send skin parts packet",
+               player);
+           server.getElytraProxy().getStatistics().addBlockedConnection();
++          server.getElytraProxy().getStatistics().addBlockedBots();
+         }
+         logger.info(toStringPacket, player);
+       }
+diff --git a/proxy/src/main/java/com/velocitypowered/proxy/connection/client/LoginSessionHandler.java b/proxy/src/main/java/com/velocitypowered/proxy/connection/client/LoginSessionHandler.java
+index 0bd2fc81..942c9911 100644
+--- a/proxy/src/main/java/com/velocitypowered/proxy/connection/client/LoginSessionHandler.java
++++ b/proxy/src/main/java/com/velocitypowered/proxy/connection/client/LoginSessionHandler.java
+@@ -320,6 +320,7 @@ public class LoginSessionHandler implements MinecraftSessionHandler {
+                   .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
+               ), true);
+       server.getElytraProxy().getStatistics().addBlockedConnection();
++      server.getElytraProxy().getStatistics().addBlockedBots();
+       return;
+     }
+     // injectBotFilterOrFinishLogin(player);
+diff --git a/proxy/src/main/java/com/velocitypowered/proxy/connection/client/StatusSessionHandler.java b/proxy/src/main/java/com/velocitypowered/proxy/connection/client/StatusSessionHandler.java
+index eb4614c7..e5ea219d 100644
+--- a/proxy/src/main/java/com/velocitypowered/proxy/connection/client/StatusSessionHandler.java
++++ b/proxy/src/main/java/com/velocitypowered/proxy/connection/client/StatusSessionHandler.java
+@@ -45,9 +45,6 @@ import java.util.Locale;
+ import java.util.Optional;
+ import java.util.concurrent.CompletableFuture;
+ import net.elytrium.elytraproxy.config.Settings;
+-import net.kyori.adventure.text.Component;
+-import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
+-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+ import org.apache.logging.log4j.LogManager;
+ import org.apache.logging.log4j.Logger;
+ 
+@@ -61,8 +58,6 @@ public class StatusSessionHandler implements MinecraftSessionHandler {
+   private final MinecraftConnection connection;
+   private final InboundConnection inbound;
+   private boolean pingReceived = false;
+-  // ElytraProxy
+-  private Component maintenanceMotd;
+ 
+   StatusSessionHandler(VelocityServer server, MinecraftConnection connection,
+       InboundConnection inbound) {
+@@ -81,28 +76,6 @@ public class StatusSessionHandler implements MinecraftSessionHandler {
+     server.getElytraProxy().getStatistics().addPingPerSecond();
+   }
+ 
+-  // ElytraProxy
+-  private Component getMaintenanceMotd() {
+-    if (Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED) {
+-      if (Settings.IMP.MAIN_SETTINGS.MAINTENANCE.MOTD.startsWith("{")) {
+-        maintenanceMotd = GsonComponentSerializer
+-            .gson()
+-            .deserialize(Settings.IMP.MAIN_SETTINGS.MAINTENANCE.MOTD
+-                .replace("{NL}", "\n")
+-                .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
+-            );
+-      } else {
+-        maintenanceMotd = LegacyComponentSerializer
+-            .legacyAmpersand()
+-            .deserialize(Settings.IMP.MAIN_SETTINGS.MAINTENANCE.MOTD
+-                .replace("{NL}", "\n")
+-                .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
+-            );
+-      }
+-    }
+-    return maintenanceMotd;
+-  }
+-
+   private ServerPing constructLocalPing(ProtocolVersion version) {
+     VelocityConfiguration configuration = server.getConfiguration();
+     return new ServerPing(
+@@ -114,10 +87,15 @@ public class StatusSessionHandler implements MinecraftSessionHandler {
+                     .replace('&', '§')
+                     .replace("{NL}", "\n")
+                     .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)),
+-        new ServerPing.Players(server.getPlayerCount(), configuration.getShowMaxPlayers(),
++        new ServerPing.Players(Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED
++            ? 0
++            : server.getPlayerCount(),
++            Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED
++            ? 0
++            : configuration.getShowMaxPlayers(),
+             ImmutableList.of()),
+         Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED
+-            ? getMaintenanceMotd()
++            ? server.getMaintenanceMotd()
+             : configuration.getMotd(),
+         configuration.getFavicon().orElse(null),
+         configuration.isAnnounceForge() ? ModInfo.DEFAULT : null
+diff --git a/proxy/src/main/java/com/velocitypowered/proxy/protocol/netty/GS4QueryHandler.java b/proxy/src/main/java/com/velocitypowered/proxy/protocol/netty/GS4QueryHandler.java
+index 55e42236..8a711ae6 100644
+--- a/proxy/src/main/java/com/velocitypowered/proxy/protocol/netty/GS4QueryHandler.java
++++ b/proxy/src/main/java/com/velocitypowered/proxy/protocol/netty/GS4QueryHandler.java
+@@ -83,22 +83,32 @@ public class GS4QueryHandler extends SimpleChannelInboundHandler<DatagramPacket>
+ 
+   private QueryResponse createInitialResponse() {
+     return QueryResponse.builder()
+-        .hostname(PlainComponentSerializer.plain().serialize(server.getConfiguration().getMotd()))
++        .hostname(PlainComponentSerializer.plain().serialize(
++            Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED
++            ? server.getMaintenanceMotd()
++            : server.getConfiguration().getMotd()))
+         .gameVersion("")
+         .map(server.getConfiguration().getQueryMap())
+-        .currentPlayers(server.getPlayerCount())
+-        .maxPlayers(server.getConfiguration().getShowMaxPlayers())
++        .currentPlayers(Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED
++            ? 0
++            : server.getPlayerCount())
++        .maxPlayers(Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED
++            ? 0
++            : server.getConfiguration().getShowMaxPlayers())
+         .proxyPort(server.getConfiguration().getBind().getPort())
+         .proxyHost(server.getConfiguration().getBind().getHostString())
+-        .players(server.getAllPlayers().stream().filter(p ->
+-            !Settings.IMP.MAIN_SETTINGS.IGNORE_ONLINE_AT.contains(p.getCurrentServer()
+-                .get().getServerInfo().getName()))
++        .players(server.getAllPlayers().stream().filter(p -> p.getCurrentServer()
++            .isPresent())
++            .filter(p -> !Settings.IMP.MAIN_SETTINGS.IGNORE_ONLINE_AT
++                .contains(p.getCurrentServer().get().getServerInfo().getName()))
+             .map(Player::getUsername)
+             .collect(Collectors.toList()))
+-        .proxyVersion(Settings.IMP.MAIN_SETTINGS.PING_VERSION
+-            .replace('&', '§')
+-            .replace("{NL}", "\n")
+-            .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX))
++        .proxyVersion((Settings.IMP.MAIN_SETTINGS.MAINTENANCE.ENABLED
++            ? Settings.IMP.MAIN_SETTINGS.MAINTENANCE.PING_VERSION
++            : Settings.IMP.MAIN_SETTINGS.PING_VERSION)
++                .replace('&', '§')
++                .replace("{NL}", "\n")
++                .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX))
+         .plugins(
+             server.getConfiguration().shouldQueryShowPlugins() ? getRealPluginInformation()
+                 : Collections.emptyList())
+diff --git a/proxy/src/main/java/net/elytrium/elytraproxy/ElytraProxy.java b/proxy/src/main/java/net/elytrium/elytraproxy/ElytraProxy.java
+index 2356caad..a2dc13bf 100644
+--- a/proxy/src/main/java/net/elytrium/elytraproxy/ElytraProxy.java
++++ b/proxy/src/main/java/net/elytrium/elytraproxy/ElytraProxy.java
+@@ -44,6 +44,7 @@ import net.elytrium.elytraproxy.commands.ElytraProxyCommand;
+ import net.elytrium.elytraproxy.commands.FindCommand;
+ import net.elytrium.elytraproxy.commands.SendCommand;
+ import net.elytrium.elytraproxy.config.Settings;
++import net.elytrium.elytraproxy.database.Database;
+ import net.elytrium.elytraproxy.stats.Statistics;
+ import net.kyori.adventure.identity.Identity;
+ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+@@ -56,7 +57,7 @@ import org.apache.logging.log4j.Logger;
+     "OBL_UNSATISFIED_OBLIGATION_EXCEPTION_EDGE"})
+ public class ElytraProxy {
+   private final Logger logger = LogManager.getLogger("ElytraProxy");
+-  //private Database database;
++  private Database database;
+ 
+   // BotFilter start
+   private final Logger bfLogger = LogManager.getLogger("BotFilter");
+diff --git a/proxy/src/main/java/net/elytrium/elytraproxy/commands/FindCommand.java b/proxy/src/main/java/net/elytrium/elytraproxy/commands/FindCommand.java
+index 5e60e390..0230c0d7 100644
+--- a/proxy/src/main/java/net/elytrium/elytraproxy/commands/FindCommand.java
++++ b/proxy/src/main/java/net/elytrium/elytraproxy/commands/FindCommand.java
+@@ -84,9 +84,10 @@ public class FindCommand implements SimpleCommand {
+       } else {
+         source.sendMessage(
+             LegacyComponentSerializer
+-                .legacySection()
++                .legacyAmpersand()
+                 .deserialize(Settings.IMP.MESSAGES.ELYTRAPROXY.USER_NOT_ONLINE
+                     .replace("{NL}", "\n")
++                    .replace("{PRFX}", Settings.IMP.MESSAGES.ELYTRAPROXY.PREFIX)
+                     .replace("{0}", args[0])
+                 ));
+       }
+diff --git a/proxy/src/main/java/net/elytrium/elytraproxy/config/Settings.java b/proxy/src/main/java/net/elytrium/elytraproxy/config/Settings.java
+index 51fe66c2..2751d0bc 100644
+--- a/proxy/src/main/java/net/elytrium/elytraproxy/config/Settings.java
++++ b/proxy/src/main/java/net/elytrium/elytraproxy/config/Settings.java
+@@ -55,8 +55,8 @@ public class Settings extends Config {
+       public String SEND_YOU_GOT_SUMMONED = "{PRFX} &fSummoned to &6{0} &fby &6{1}";
+       public String SEND_NOT_ENOUGH_ARGUMENTS = "{PRFX} &fNot enough arguments, usage: &6/send <server|player|all|current> <target>";
+       public String COMMAND_SPY_FORMAT = "&7 — Player {0} executed command {1}";
+-      public String COMMAND_SPY_ENABLED = "{PRFX} &fNow you see commands from all server in your chat.";
+-      public String COMMAND_SPY_DISABLED = "{PRFX} &fYou're no longer see statistics in your action bar.";
++      public String COMMAND_SPY_ENABLED = "{PRFX} &fYou have successfully activated command spy.";
++      public String COMMAND_SPY_DISABLED = "{PRFX} &fYou have successfully deactivated command spy.";
+       public String CONSOLE_LOG_COMMAND_EXECUTIONS_FORMAT = "{0} -> executed command {1}";
+       public String RELOAD_SUCCESS = "{PRFX} &fElytraProxy configuration successfully reloaded.";
+       public String RELOAD_FAILURE = "{PRFX} &cUnable to reload your ElytraProxy configuration. Check the console for more details.";
+@@ -66,6 +66,7 @@ public class Settings extends Config {
+ 
+       @Comment("Kick messages")
+       public static class KICK {
++        public String PROXY_SHUTTING_DOWN = "&cProxy shutting down.";
+         public String PROTOCOL_BLOCKED = "&c1.7.x not supported";
+         public String NICK_BLOCKED = "&cYour nickname contains forbidden phrases.";
+         public String CLIENT_CHECK_SETTINGS = "&cYour client doesn't send settings packets.";
+@@ -194,7 +195,7 @@ public class Settings extends Config {
+         "In lowercase"
+     })
+     public List<String> BANNED_NICK_PATTERNS = Arrays.asList(
+-        "dropbot", "mcspam", "mcdrop", "mcrage", "mcstorm", "extremebot", "cipher_bot", "biboran"
++        "dropbot", "mcspam", "mcdrop", "mcrage", "mcstorm", "extremebot", "cipher", "biboran"
+     );
+   }
+ 
+diff --git a/proxy/src/main/java/net/elytrium/elytraproxy/stats/Statistics.java b/proxy/src/main/java/net/elytrium/elytraproxy/stats/Statistics.java
+index 51c98d40..98226df1 100644
+--- a/proxy/src/main/java/net/elytrium/elytraproxy/stats/Statistics.java
++++ b/proxy/src/main/java/net/elytrium/elytraproxy/stats/Statistics.java
+@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
+ public class Statistics {
+ 
+   private final AtomicLong blockedConnections = new AtomicLong(0L);
++  private final AtomicLong blockedBots = new AtomicLong(0L);
+   private final AtomicInteger connectionsPerSecond = new AtomicInteger();
+   private final AtomicInteger pingsPerSecond = new AtomicInteger();
+   private final AtomicInteger totalConnectionsPerSecond = new AtomicInteger();
+@@ -33,32 +34,40 @@ public class Statistics {
+     blockedConnections.incrementAndGet();
+   }
+ 
++  public void addBlockedBots() {
++    blockedBots.incrementAndGet();
++  }
++
++  public void addConnectionPerSecond() {
++    connectionsPerSecond.incrementAndGet();
++  }
++
++  public void addPingPerSecond() {
++    pingsPerSecond.incrementAndGet();
++  }
++
++  public void addTotalConnectionPerSecond() {
++    totalConnectionsPerSecond.incrementAndGet();
++  }
++
+   public long getBlockedConnections() {
+     return blockedConnections.longValue();
+   }
+ 
+-  public int getTotalConnectionsPerSecond() {
+-    return totalConnectionsPerSecond.get();
++  public long getBlockedBots() {
++    return blockedBots.longValue();
+   }
+ 
+   public int getConnectionsPerSecond() {
+     return connectionsPerSecond.get();
+   }
+ 
+-  public void addConnectionPerSecond() {
+-    connectionsPerSecond.incrementAndGet();
+-  }
+-
+   public int getPingsPerSecond() {
+     return pingsPerSecond.get();
+   }
+ 
+-  public void addPingPerSecond() {
+-    pingsPerSecond.incrementAndGet();
+-  }
+-
+-  public void addTotalConnectionPerSecond() {
+-    totalConnectionsPerSecond.incrementAndGet();
++  public int getTotalConnectionsPerSecond() {
++    return totalConnectionsPerSecond.get();
+   }
+ 
+   public void startUpdating() {
+-- 
+2.24.1.windows.2
+

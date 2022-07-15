@@ -1,0 +1,82 @@
+From 0db440abd9419c778cd603eebb35abf3b3d5bc4b Mon Sep 17 00:00:00 2001
+From: mdxd44 <mdxd44@ely.su>
+Date: Mon, 10 May 2021 03:53:07 +0900
+Subject: [PATCH] Gradle Changes
+
+
+diff --git a/proxy/build.gradle b/proxy/build.gradle
+index fc5be026..3fcae8df 100644
+--- a/proxy/build.gradle
++++ b/proxy/build.gradle
+@@ -24,7 +24,7 @@ jar {
+         }
+ 
+         attributes 'Main-Class': 'com.velocitypowered.proxy.Velocity'
+-        attributes 'Implementation-Title': "Velocity"
++        attributes 'Implementation-Title': "ElytraProxy"
+         attributes 'Implementation-Version': version
+         attributes 'Implementation-Vendor': "Velocity Contributors"
+         attributes 'Multi-Release': 'true'
+@@ -41,9 +41,9 @@ tasks.withType(Checkstyle) {
+ 
+ dependencies {
+     // Note: we depend on the API twice, first the main sourceset, and then the annotation processor.
+-    implementation project(':velocity-api')
+-    implementation project(':velocity-api').sourceSets.ap.output
+-    implementation project(':velocity-native')
++    implementation project(':elytraproxy-api')
++    implementation project(':elytraproxy-api').sourceSets.ap.output
++    implementation project(':elytraproxy-native')
+ 
+     implementation "io.netty:netty-codec:${nettyVersion}"
+     implementation "io.netty:netty-codec-haproxy:${nettyVersion}"
+diff --git a/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java b/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java
+index d5adf258..054e9802 100644
+--- a/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java
++++ b/proxy/src/main/java/com/velocitypowered/proxy/VelocityServer.java
+@@ -174,11 +174,11 @@ public class VelocityServer implements ProxyServer, ForwardingAudience {
+     String implVersion;
+     String implVendor;
+     if (pkg != null) {
+-      implName = MoreObjects.firstNonNull(pkg.getImplementationTitle(), "Velocity");
++      implName = MoreObjects.firstNonNull(pkg.getImplementationTitle(), "ElytraProxy");
+       implVersion = MoreObjects.firstNonNull(pkg.getImplementationVersion(), "<unknown>");
+       implVendor = MoreObjects.firstNonNull(pkg.getImplementationVendor(), "Velocity Contributors");
+     } else {
+-      implName = "Velocity";
++      implName = "ElytraProxy";
+       implVersion = "<unknown>";
+       implVendor = "Velocity Contributors";
+     }
+@@ -208,7 +208,7 @@ public class VelocityServer implements ProxyServer, ForwardingAudience {
+     cm.logChannelInformation();
+ 
+     // Initialize commands first
+-    commandManager.register("velocity", new VelocityCommand(this));
++    commandManager.register("elytraproxy", new VelocityCommand(this));
+     commandManager.register("server", new ServerCommand(this));
+     commandManager.register("shutdown", new ShutdownCommand(this),"end");
+     new GlistCommand(this).register();
+diff --git a/settings.gradle b/settings.gradle
+index d0f3098b..5c877b20 100644
+--- a/settings.gradle
++++ b/settings.gradle
+@@ -1,9 +1,9 @@
+-rootProject.name = 'velocity'
++rootProject.name = 'elytraproxy'
+ include(
+         'api',
+         'proxy',
+         'native'
+ )
+-findProject(':api')?.name = 'velocity-api'
+-findProject(':proxy')?.name = 'velocity-proxy'
+-findProject(':native')?.name = 'velocity-native'
+\ No newline at end of file
++findProject(':api')?.name = 'elytraproxy-api'
++findProject(':proxy')?.name = 'elytraproxy-proxy'
++findProject(':native')?.name = 'elytraproxy-native'
+\ No newline at end of file
+-- 
+2.32.0
+
