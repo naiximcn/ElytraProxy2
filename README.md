@@ -1,5 +1,19 @@
 <img src="https://elytrium.net/src/img/elytrium.webp" alt="Elytrium" align="right">
 
+# This project will try to resurrect [`ElytraProxy`](https://github.com/Elytrium/ElytraProxy/).
+
+ElytraProxy2 is best for `Elytrium` 's [`ElytraProxy`](https://github.com/Elytrium/ElytraProxy/).
+
+ElytraProxy2 is fork of `Elytrium` 's [`ElytraProxy`](https://github.com/Elytrium/ElytraProxy/) and `PaperMC` 's [`Velocity`](https://github.com/PaperMC/Velocity) .
+
+ElytraProxy2 Wan't to resurrect `Elytrium` 's [`ElytraProxy`](https://github.com/Elytrium/ElytraProxy/).
+
+ElytraProxy2 is open sourced under the [`GNU Affero General Public License v3.0`](https://github.com/naiximcn/ElytraProxy2/blob/main/LICENSE)
+
+## 是分界线辣~ (奶昔英语不好懒得写英文惹)
+
+------
+
 # Deprecated: go back i want to be <s>monke</s> plugin
 ElytraProxy's Virtual Server, Auth, and BotFilter features are now available in simple Velocity plugins: [LimboAPI, LimboAuth and LimboFilter](https://github.com/Elytrium/LimboAPI) 🥳
 
@@ -17,7 +31,7 @@ Test server: [``ely.su``](https://hotmc.ru/minecraft-server-203216)
 
 ## Features
 
-- 1.7 - 1.17.1 is supported
+- 1.7 - 1.19 is supported
 - The most powerful bot protection on market (see below) via Falling Check, Captcha and ClientSettings + MC|Brand packets decryption.
 - Customizable Captcha - change font, backplate or alphabet of captcha
 - SQLite/MySQL + BCrypt Auth System with IP Limit (by default: 3 accounts on 1 IP during 6 hours), "Online Mode (aka Premium) accounts skip auth" mode is supported, 2FA TOTP (aka Google Authenticator)
